@@ -6,7 +6,6 @@ const router = useRouter();
 const gameStore = useGameStore();
 const roomCode = (route.params.code as string).toUpperCase();
 
-// Estados
 const showNewTaskModal = ref(false);
 const showJoinModal = ref(false);
 const isEditingResult = ref(false);
@@ -21,29 +20,42 @@ const avatars = [
   "Cat6.svg",
 ];
 
-// Inicialização
 onMounted(async () => {
   if (!gameStore.currentRoom || gameStore.currentRoom.code !== roomCode) {
     try {
       await gameStore.findRoomByCode(roomCode);
-      const restored = await gameStore.tryRestoreSession(
-        gameStore.currentRoom!.id
-      );
-      if (!restored && !gameStore.currentPlayerId) showJoinModal.value = true;
     } catch {
       router.push("/");
+      return;
+    }
+  }
+
+  const restored = await gameStore.tryRestoreSession(gameStore.currentRoom!.id);
+
+  if (!restored && !gameStore.currentPlayerId) {
+    // Se sou admin, tento entrar direto recuperando meu avatar pelo ID
+    let joinedAsAdmin = false;
+    if (gameStore.isAdmin) {
+      joinedAsAdmin = await gameStore.adminQuickJoin();
+    }
+
+    // Se não entrou automático E a sala não está fechada (ou sou admin que falhou o auto), mostra modal
+    if (
+      !joinedAsAdmin &&
+      (!gameStore.currentRoom.is_finished || gameStore.isAdmin)
+    ) {
+      // Se sou admin e falhou o auto-join (primeira vez na sala antiga), o modal abre para criar o avatar.
+      // Na próxima vez, o auto-join vai achar esse boneco pelo user_id.
+      showJoinModal.value = true;
     }
   }
   gameStore.subscribeToRoom();
 });
 
-// Alternar Bloqueio da Sala
 const toggleLock = () => {
-  if (!gameStore.isAdmin || !gameStore.currentRoom) return;
-  gameStore.toggleRoomLock(!gameStore.currentRoom.is_finished);
+  if (gameStore.isAdmin && gameStore.currentRoom)
+    gameStore.toggleRoomLock(!gameStore.currentRoom.is_finished);
 };
-
-// Navegação
 const goBack = () => {
   gameStore.isAdmin ? router.push("/dashboard") : router.push("/join");
 };
@@ -52,8 +64,6 @@ const formatLink = (url: string) => {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   return `https://${url}`;
 };
-
-// Edição
 const saveManualResult = async (event: any) => {
   const newScore = event.target.value;
   if (newScore) await gameStore.updateTaskScore(newScore);
@@ -65,8 +75,6 @@ const enableEditResult = () => {
     nextTick(() => document.getElementById("resultInput")?.focus());
   }
 };
-
-// Actions
 const handleJoinRoom = async () => {
   if (!joinForm.name) return alert("Nome obrigatório");
   try {
@@ -115,8 +123,6 @@ const copyCode = () => {
   navigator.clipboard.writeText(window.location.href);
   alert("Copiado!");
 };
-
-// Computeds
 const getPlayerVote = (pid: string) => gameStore.activeTask?.votes?.[pid];
 const myVote = computed(() => gameStore.myLocalVote);
 const myself = computed(() =>
@@ -136,24 +142,20 @@ const hasPrev = computed(() => {
   );
   return idx > 0;
 });
-
 const taskResult = computed(() => {
   if (!gameStore.activeTask) return null;
   if (gameStore.activeTask.final_score) return gameStore.activeTask.final_score;
   if (!gameStore.activeTask.votes) return null;
-
   const votes = Object.values(gameStore.activeTask.votes)
     .filter((v) => v !== "☕" && v !== "?" && v !== "hidden")
     .map((v) => Number(v))
     .sort((a, b) => a - b);
-
   if (votes.length === 0) {
     const rawVotes = Object.values(gameStore.activeTask.votes);
     if (rawVotes.includes("☕")) return "☕";
     if (rawVotes.includes("?")) return "?";
     return null;
   }
-
   const counts: Record<number, number> = {};
   let maxFreq = 0,
     mode = votes[0];
@@ -164,7 +166,6 @@ const taskResult = computed(() => {
       mode = num;
     }
   });
-
   if (maxFreq >= 2) return mode.toString();
   return votes[Math.floor(votes.length / 2)].toString();
 });
@@ -186,10 +187,11 @@ const taskResult = computed(() => {
           class="hidden md:flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-indigo-100 transition"
           @click="copyCode"
         >
-          <span class="text-xs font-bold text-indigo-400">CÓDIGO:</span>
-          <span class="text-lg font-black text-indigo-700">{{ roomCode }}</span>
+          <span class="text-xs font-bold text-indigo-400">CÓDIGO:</span
+          ><span class="text-lg font-black text-indigo-700">{{
+            roomCode
+          }}</span>
         </div>
-
         <div
           v-if="gameStore.currentRoom"
           @click="toggleLock"
@@ -219,7 +221,7 @@ const taskResult = computed(() => {
       <div class="flex items-center gap-3">
         <div class="text-right hidden sm:block">
           <p class="text-sm font-bold text-slate-700">
-            {{ myself?.name || "Visitante" }}
+            {{ myself?.name || (gameStore.isAdmin ? "Admin" : "Visitante") }}
           </p>
           <p class="text-xs text-slate-400">
             {{ gameStore.isAdmin ? "Admin" : "Membro" }}
@@ -261,7 +263,6 @@ const taskResult = computed(() => {
         >
           ◀
         </button>
-
         <div
           class="bg-white flex-1 p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-white relative min-h-[280px]"
         >
@@ -296,7 +297,6 @@ const taskResult = computed(() => {
               >Resultado</span
             >
           </div>
-
           <div
             v-if="gameStore.isAdmin"
             class="absolute bottom-8 right-8 flex gap-2 z-20"
@@ -326,7 +326,6 @@ const taskResult = computed(() => {
               + Task
             </button>
           </div>
-
           <div class="w-full pr-4 md:pr-32">
             <div class="flex justify-between items-center mb-3">
               <h1
@@ -351,8 +350,7 @@ const taskResult = computed(() => {
               >
                 <span class="text-slate-400 font-bold min-w-[60px]"
                   >🔗 Job:</span
-                >
-                <a
+                ><a
                   :href="formatLink(gameStore.activeTask.link_job)"
                   target="_blank"
                   class="text-indigo-600 font-medium hover:text-indigo-800 hover:underline break-all transition-colors"
@@ -365,8 +363,7 @@ const taskResult = computed(() => {
               >
                 <span class="text-slate-400 font-bold min-w-[60px]"
                   >🎨 Figma:</span
-                >
-                <a
+                ><a
                   :href="formatLink(gameStore.activeTask.link_figma)"
                   target="_blank"
                   class="text-purple-600 font-medium hover:text-purple-800 hover:underline break-all transition-colors"
@@ -385,7 +382,6 @@ const taskResult = computed(() => {
             </div>
           </div>
         </div>
-
         <button
           v-if="gameStore.isAdmin"
           @click="nextTask"
@@ -435,8 +431,7 @@ const taskResult = computed(() => {
             <img
               :src="getAvatar(player)"
               class="w-12 h-12 rounded-full border-2 border-white shadow-md bg-slate-100 mb-1 object-cover"
-            />
-            <span class="text-sm font-semibold text-slate-600">{{
+            /><span class="text-sm font-semibold text-slate-600">{{
               player.name
             }}</span>
           </div>
@@ -445,7 +440,11 @@ const taskResult = computed(() => {
     </main>
 
     <footer
-      v-if="gameStore.tasks.length > 0"
+      v-if="
+        gameStore.tasks.length > 0 &&
+        !gameStore.currentRoom?.is_finished &&
+        gameStore.currentPlayerId
+      "
       class="fixed bottom-0 w-full bg-[#E0E7FF]/90 backdrop-blur-md border-t border-white/50 flex flex-col items-center z-50 transition-all duration-500 pb-2"
       :class="{
         'translate-y-full opacity-0': gameStore.activeTask?.is_revealed,
@@ -477,18 +476,16 @@ const taskResult = computed(() => {
             alt="Café"
           />
           <span v-else class="drop-shadow-sm">{{ card }}</span>
-          <span
-            v-if="card !== '☕'"
-            class="absolute top-1.5 left-1.5 text-[10px] transition-opacity duration-300"
-            :class="
-              myVote === card
-                ? 'text-white/60 opacity-100'
-                : 'text-slate-300 opacity-40 group-hover:opacity-100'
-            "
-          ></span>
         </button>
       </div>
     </footer>
+
+    <div
+      v-else-if="gameStore.currentRoom?.is_finished"
+      class="fixed bottom-0 w-full bg-red-100 p-4 text-center text-red-600 font-bold border-t border-red-200 z-50"
+    >
+      🔒 Esta planning foi encerrada. Apenas visualização.
+    </div>
 
     <div
       v-if="showNewTaskModal"

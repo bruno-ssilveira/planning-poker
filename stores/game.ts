@@ -48,27 +48,66 @@ export const useGameStore = defineStore("game", () => {
 
     clearState();
     currentRoom.value = room;
+
     await joinRoom(room.id, playerName, avatar);
   };
 
+  // --- JOIN INTELIGENTE ---
   const joinRoom = async (
     roomId: string,
     playerName: string,
     avatar: string
   ) => {
-    if (currentRoom.value?.is_finished) {
+    const userId = user.value?.id || (user.value as any)?.sub;
+    const isOwner = userId && currentRoom.value?.owner_id === userId;
+
+    // Bloqueia entrada se fechado (exceto admin)
+    if (currentRoom.value?.is_finished && !isOwner) {
       throw new Error("Esta planning foi finalizada pelo administrador.");
+    }
+
+    if (userId) {
+      const { data: existingPlayer } = await supabase
+        .from("players")
+        .select()
+        .eq("room_id", roomId)
+        .eq("user_id", userId)
+        .single();
+
+      if (existingPlayer) {
+        currentPlayerId.value = existingPlayer.id;
+        if (typeof window !== "undefined")
+          localStorage.setItem(`player_id_${roomId}`, existingPlayer.id);
+        return;
+      }
     }
 
     const { data: player, error } = await supabase
       .from("players")
-      .insert({ room_id: roomId, name: playerName, avatar })
+      .insert({
+        room_id: roomId,
+        name: playerName,
+        avatar: avatar,
+        user_id: userId || null,
+      })
       .select()
       .single();
+
     if (error) throw error;
     currentPlayerId.value = player.id;
     if (typeof window !== "undefined")
       localStorage.setItem(`player_id_${roomId}`, player.id);
+  };
+
+  const adminQuickJoin = async () => {
+    if (!currentRoom.value || !user.value) return false;
+    try {
+      const adminName = user.value.user_metadata?.full_name || "Admin";
+      await joinRoom(currentRoom.value.id, adminName, "Cat1.svg");
+      return true;
+    } catch (e) {
+      return false;
+    }
   };
 
   const tryRestoreSession = async (roomId: string) => {
@@ -348,5 +387,7 @@ export const useGameStore = defineStore("game", () => {
     fetchMyRooms,
     deleteRoom,
     updateTaskScore,
+    clearState,
+    adminQuickJoin,
   };
 });
