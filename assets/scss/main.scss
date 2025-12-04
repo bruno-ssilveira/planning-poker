@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+// CONFIGURAÇÃO DE CURSOR E SELEÇÃO
+html,
+body {
+  @apply bg-[#EEF2FF] text-slate-700 font-sans;
+  cursor: default; /* Cursor padrão (setinha) */
+  -webkit-user-select: none; /* Safari */
+  user-select: none; /* Chrome/Standard */
+}
+
+// Libera seleção e cursor de texto APENAS para inputs
+input,
+textarea {
+  user-select: text;
+  cursor: text;
+}
+
+// Garante que botões e links tenham a mãozinha
+button,
+a,
+.cursor-pointer {
+  cursor: pointer;
+}
+
+// Ajuste para scrollbar invisível mas funcional
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
